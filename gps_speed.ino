@@ -40,6 +40,7 @@ struct SUserData {
 #define STR_RESET         F(" RESET ")
 
 #define GPS_INTERVAL_MS   1000
+#define GPS_TIMEOUT_MS    5000
 #define OLED_RESET        10
 #define PIN_GPS_RX        4
 #define PIN_GPS_TX        3
@@ -80,97 +81,91 @@ void setup() {
 
 void loop() {
 
-  HW_ScanButton(&gButton);
 
-  if(millis() - gTS < GPS_INTERVAL_MS) {
-    return;
-  }
+  // if(millis() - gTS < GPS_INTERVAL_MS) {
+  //   return;
+  // }
 
-// DEBUG
-  //printInt(gGPS.satellites.value(), gGPS.satellites.isValid(), 5);
-  //printInt(gGPS.hdop.value(), gGPS.hdop.isValid(), 5);
-  //printFloat(gGPS.location.lat(), gGPS.location.isValid(), 11, 6);
-  //printFloat(gGPS.location.lng(), gGPS.location.isValid(), 12, 6);
-  //printInt(gGPS.location.age(), gGPS.location.isValid(), 5);
-  //printDateTime(gGPS.date, gGPS.time);
-  //printFloat(gGPS.altitude.meters(), gGPS.altitude.isValid(), 7, 2);
-  //Serial.println();
 
-//////////////////
-
-  float dist_m = TinyGPSPlus::distanceBetween(gGPS.location.lat(), gGPS.location.lng(), gData.prev_lat, gData.prev_lng);
-
-  gData.num_samples++;
-
-  // current speed
-  gData.cur_speed_kmh = (3600.0 * dist_m) / (millis() - gTS);
-
-  // average speed
-  gData.avg_speed_kmh += gData.cur_speed_kmh;
-
-  // top speed
-  if(gData.cur_speed_kmh > gData.top_speed_kmh) {
-    gData.top_speed_kmh = gData.cur_speed_kmh;
-  }
-
-  // current altitude
-  gData.cur_altitude_m = gGPS.altitude.meters();
-
-  // top altitude
-  if(gData.cur_altitude_m > gData.top_altitude_m) {
-    gData.top_altitude_m = gData.cur_altitude_m;
-  }
-
-  // total descending altitude
-  if(gData.prev_alt > gData.cur_altitude_m) {
-    gData.tot_altitude_m += (gData.prev_alt - gData.cur_altitude_m);
-  }
-
-  // distance
-  gData.distance_km += (dist_m / 1000.0);
-
-  // debug
-  Serial.print(F("  lat:"));
-  Serial.print(gGPS.location.lat(), DEC);
-  Serial.print(F("  lng:"));
-  Serial.print(gGPS.location.lng(), DEC);
-  Serial.print(F("  spd:"));
-  Serial.print(gData.cur_speed_kmh, DEC);
-  Serial.print(F("  avg:"));
-  Serial.print(gData.avg_speed_kmh, DEC);
-  Serial.print(F("  top:"));
-  Serial.print(gData.top_speed_kmh, DEC);
-  Serial.print(F("  alt:"));
-  Serial.print(gData.cur_altitude_m, DEC);
-  Serial.print(F("  top:"));
-  Serial.print(gData.top_altitude_m, DEC);
-  Serial.print(F("  tot:"));
-  Serial.print(gData.tot_altitude_m, DEC);
-  Serial.print(F("  dst:"));
-  Serial.print(gData.distance_km, DEC);
-  Serial.println(F(""));
-    
 
   // feed w/ data from GPS during 1 second
-  unsigned long start = millis();
+  // unsigned long start = millis();
   do {
+    HW_ScanButton(&gButton);
     while (gGPSSerial.available()) {
       gGPS.encode(gGPSSerial.read());
     }
-  } while (millis() - start < 1000);
+  } while (millis() - gTS < GPS_INTERVAL_MS);
+  
 
-  if (millis() - gTS > 5000 && gGPS.charsProcessed() < 10) {
+  // wait to get enough samples
+  gData.num_samples++;
+  if(gData.num_samples > 1) {
+    
+    float dist_m = TinyGPSPlus::distanceBetween(gGPS.location.lat(), gGPS.location.lng(), gData.prev_lat, gData.prev_lng);
+    
+    // current speed
+    gData.cur_speed_kmh = (3600.0 * dist_m) / (millis() - gTS);
+
+    // average speed
+    gData.avg_speed_kmh += gData.cur_speed_kmh;
+
+    // top speed
+    if(gData.cur_speed_kmh > gData.top_speed_kmh) {
+      gData.top_speed_kmh = gData.cur_speed_kmh;
+    }
+
+    // current altitude
+    gData.cur_altitude_m = gGPS.altitude.meters();
+
+    // top altitude
+    if(gData.cur_altitude_m > gData.top_altitude_m) {
+      gData.top_altitude_m = gData.cur_altitude_m;
+    }
+
+    // total descending altitude
+    if(gData.prev_alt > gData.cur_altitude_m) {
+      gData.tot_altitude_m += (gData.prev_alt - gData.cur_altitude_m);
+    }
+
+    // distance
+    gData.distance_km += (dist_m / 1000.0);
+
+    // debug
+    Serial.print(F("  lat:"));
+    Serial.print(gGPS.location.lat(), DEC);
+    Serial.print(F("  lng:"));
+    Serial.print(gGPS.location.lng(), DEC);
+    Serial.print(F("  spd:"));
+    Serial.print(gData.cur_speed_kmh, DEC);
+    Serial.print(F("  avg:"));
+    Serial.print(gData.avg_speed_kmh / gData.num_samples, DEC);
+    Serial.print(F("  top:"));
+    Serial.print(gData.top_speed_kmh, DEC);
+    Serial.print(F("  alt:"));
+    Serial.print(gData.cur_altitude_m, DEC);
+    Serial.print(F("  top:"));
+    Serial.print(gData.top_altitude_m, DEC);
+    Serial.print(F("  tot:"));
+    Serial.print(gData.tot_altitude_m, DEC);
+    Serial.print(F("  dst:"));
+    Serial.print(gData.distance_km, DEC);
+    Serial.println(F(""));
+  }
+  
+  // update internal stuff
+  gData.prev_lng = gGPS.location.lng();
+  gData.prev_lat = gGPS.location.lat();
+  gData.prev_alt = gData.cur_altitude_m;
+  gTS = millis();
+
+  if (millis() - gTS > GPS_TIMEOUT_MS && gGPS.charsProcessed() < 10) {
     OLED_DisplayError(STR_GPS_ERROR);
   }
   else {
     OLED_ShowData();
   }
 
-  // update internal stuff
-  gData.prev_lng = gGPS.location.lng();
-  gData.prev_lat = gGPS.location.lat();
-  gData.prev_alt = gData.cur_altitude_m;
-  gTS = millis();
 
 }
 
@@ -186,7 +181,7 @@ void onButtonEvent(uint8_t aPin, EButtonScanResult aResult) {
       if(gCurrentMode == EModeLast) {
         gCurrentMode = 0;
       }
-      OLED_ShowData();
+      //OLED_ShowData();
     }
     else if(aResult == EButtonLongpress) {
       Serial.println(F("LONG PRESS"));
@@ -327,92 +322,3 @@ void OLED_ShowData() {
   gOLED.display();
 }
 // =========================================================================
-
-
-// This custom version of delay() ensures that the gps object
-// is being "fed".
-// static void smartDelay(unsigned long ms)
-// {
-//   unsigned long start = millis();
-//   do 
-//   {
-//     while (gGPSSerial.available())
-//       gGPS.encode(gGPSSerial.read());
-//   } while (millis() - start < ms);
-// }
-
-
-
-
-
-
-
-// static void printFloat(float val, bool valid, int len, int prec)
-// {
-//   if (!valid)
-//   {
-//     while (len-- > 1)
-//       Serial.print('*');
-//     Serial.print(' ');
-//   }
-//   else
-//   {
-//     Serial.print(val, prec);
-//     int vi = abs((int)val);
-//     int flen = prec + (val < 0.0 ? 2 : 1); // . and -
-//     flen += vi >= 1000 ? 4 : vi >= 100 ? 3 : vi >= 10 ? 2 : 1;
-//     for (int i=flen; i<len; ++i)
-//       Serial.print(' ');
-//   }
-//   smartDelay(0);
-// }
-
-// static void printInt(unsigned long val, bool valid, int len)
-// {
-//   char sz[32] = "*****************";
-//   if (valid)
-//     sprintf(sz, "%ld", val);
-//   sz[len] = 0;
-//   for (int i=strlen(sz); i<len; ++i)
-//     sz[i] = ' ';
-//   if (len > 0) 
-//     sz[len-1] = ' ';
-//   Serial.print(sz);
-//   smartDelay(0);
-// }
-
-// static void printDateTime(TinyGPSDate &d, TinyGPSTime &t)
-// {
-//   if (!d.isValid())
-//   {
-//     Serial.print(F("********** "));
-//   }
-//   else
-//   {
-//     char sz[32];
-//     sprintf(sz, "%02d/%02d/%02d ", d.month(), d.day(), d.year());
-//     Serial.print(sz);
-//   }
-  
-//   if (!t.isValid())
-//   {
-//     Serial.print(F("******** "));
-//   }
-//   else
-//   {
-//     char sz[32];
-//     sprintf(sz, "%02d:%02d:%02d ", t.hour(), t.minute(), t.second());
-//     Serial.print(sz);
-//   }
-
-//   printInt(d.age(), d.isValid(), 5);
-//   smartDelay(0);
-// }
-
-// static void printStr(const char *str, int len)
-// {
-//   int slen = strlen(str);
-//   for (int i=0; i<len; ++i)
-//     Serial.print(i<slen ? str[i] : ' ');
-//   smartDelay(0);
-// }
